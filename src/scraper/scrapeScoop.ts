@@ -1,9 +1,26 @@
 import { chromium } from 'playwright';
 
-const SCOOP_URLS = [
-    'https://www.scoop.com.tn/321-ordinateurs-portables',
-    'https://www.scoop.com.tn/291-pc-de-bureau'
-];
+async function discoverScoopCategories(page: any): Promise<string[]> {
+    await page.goto('https://www.scoop.com.tn', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(2000);
+
+    // Extract all category links from the navigation menu
+    const urls = await page.$$eval('a[href*="/"]', (links: any[]) =>
+        links
+            .map(link => link.href)
+            .filter(href =>
+                href.includes('scoop.com.tn') &&
+                href.match(/\/\d+-/) && // matches pattern like /321-ordinateurs-portables
+                !href.includes('.html') && // exclude product pages
+                !href.includes('?') // exclude filtered pages
+            )
+    );
+
+    // Remove duplicates
+    const uniqueUrls = [...new Set(urls)] as string[];
+    console.log(`Found ${uniqueUrls.length} categories`);
+    return uniqueUrls;
+}
 
 async function scrapeScoopPage(page: any, url: string) {
     await page.goto(url, { waitUntil: 'domcontentloaded' });
@@ -11,11 +28,13 @@ async function scrapeScoopPage(page: any, url: string) {
 
     let previousCount = 0;
     while (true) {
-        const currentCount = await page.$$eval('.tvproduct-catalog-wrapper', (items: any[]) => items.length);
-        console.log(`Products loaded: ${currentCount}`);
+        const currentCount = await page.$$eval(
+            '.tvproduct-catalog-wrapper',
+            (items: any[]) => items.length
+        );
 
         if (currentCount === previousCount) {
-            console.log('No more products loading, done scrolling');
+            console.log(`No more products loading on ${url}`);
             break;
         }
 
@@ -47,14 +66,23 @@ export async function scrapeScoopTN() {
     const browser = await chromium.launch({ headless: false });
     const page = await browser.newPage();
 
+    // Auto-discover all categories
+    const categoryUrls = await discoverScoopCategories(page);
+
     const allProducts = [];
 
-    for (const url of SCOOP_URLS) {
-        const products = await scrapeScoopPage(page, url);
-        allProducts.push(...products);
+    for (const url of categoryUrls) {
+        console.log(`\nScraping category: ${url}`);
+        try {
+            const products = await scrapeScoopPage(page, url);
+            allProducts.push(...products);
+        } catch (err) {
+            console.error(`Failed to scrape ${url}:`, err);
+            // Continue with next category even if one fails
+        }
     }
 
-    console.log(`Total Scoop products: ${allProducts.length}`);
+    console.log(`\nTotal Scoop products: ${allProducts.length}`);
     await browser.close();
     return allProducts;
 }
