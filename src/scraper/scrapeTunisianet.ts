@@ -1,86 +1,142 @@
 import { chromium } from 'playwright';
+import type { Browser, Page } from 'playwright';
+import type { IProductInput } from '../models/product.js';
+import { categoryFromUrl } from '../utils/categorize.js';
+import { parallelLimit } from '../utils/concurrency.js';
 
-async function discoverTunisianetCategories(page: any): Promise<string[]> {
-    await page.goto('https://www.tunisianet.com.tn', { waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(2000);
-
-    const urls = await page.$$eval('a[href]', (links: any[]) =>
-        links
-            .map(link => link.href)
-            .filter(href =>
-                href.includes('tunisianet.com.tn') &&
-                !href.includes('.html') &&
-                !href.includes('?') &&
-                href.match(/tunisianet\.com\.tn\/[a-z]/) &&
-                !href.match(/tunisianet\.com\.tn\/$/) // exclude homepage
-            )
-    );
-
-    const uniqueUrls = [...new Set(urls)] as string[];
-    console.log(`Found ${uniqueUrls.length} categories on Tunisianet`);
-    return uniqueUrls;
+async function setupPage(page: Page) {
+    await page.route('**/*', route => {
+        if (['image', 'stylesheet', 'font'].includes(route.request().resourceType())) {
+            route.abort();
+        } else {
+            route.continue();
+        }
+    });
 }
 
-async function scrapeTunisianetCategory(page: any, categoryUrl: string) {
-    const allProducts = [];
-    let currentPage = 1;
+async function discoverTunisianetCategories(browser: Browser): Promise<string[]> {
+    console.log('Discovering categories on Tunisianet...');
+    const page = await browser.newPage();
+    await setupPage(page);
+    
+    try {
+        await page.goto('https://www.tunisianet.com.tn', { waitUntil: 'domcontentloaded' });
+        await page.waitForSelector('a[href]', { timeout: 10000 });
 
-    while (true) {
-        const url = `${categoryUrl}?page=${currentPage}&order=product.price.asc`;
-        console.log(`Scraping page ${currentPage}: ${url}`);
+        const urls = await page.$$eval('a[href]', (links: HTMLAnchorElement[]) =>
+            links
+                .map(link => link.href)
+                .filter(href =>
+                    href.includes('tunisianet.com.tn') &&
+                    !href.includes('.html') &&
+                    !href.includes('?') &&
+                    href.match(/tunisianet\.com\.tn\/[0-9]+-[a-z]/) &&
+                    !href.match(/tunisianet\.com\.tn\/$/)
+                )
+        );
 
+        const uniqueUrls = [...new Set(urls)];
+        console.log(`Found ${uniqueUrls.length} potential categories on Tunisianet`);
+        return uniqueUrls;
+    } finally {
+        await page.close();
+    }
+}
+
+async function scrapeTunisianetPage(browser: Browser, baseUrl: string, pageNum: number, category: string): Promise<IProductInput[]> {
+    const page = await browser.newPage();
+    await setupPage(page);
+    const url = `${baseUrl}?page=${pageNum}&order=product.price.asc`;
+    
+    try {
         await page.goto(url, { waitUntil: 'domcontentloaded' });
-        await page.waitForTimeout(3000);
+        try {
+            await page.waitForSelector('.item-product', { timeout: 5000 });
+        } catch {
+            return []; // No products
+        }
 
-        const products = await page.$$eval('.item-product', (items: any[]) =>
+        const products = await page.$$eval('.item-product', (items: Element[]) =>
             items.map(item => ({
                 name: item.querySelector('.product-title a')?.textContent?.trim() ?? '',
                 price: Number(item.querySelector('.price')?.textContent?.replace(/[^0-9]/g, '')),
-                url: item.querySelector('.product-thumbnail')?.getAttribute('href') ?? '',
-                image: item.querySelector('.center-block.img-responsive')?.getAttribute('src') ?? '',
+                url: item.querySelector('.product-title a')?.getAttribute('href') ?? '',
+                image: item.querySelector('.product-thumbnail img')?.getAttribute('src') ?? '',
+                description: '',
                 store: 'Tunisianet'
             }))
         );
 
-        if (products.length === 0) {
-            console.log(`No more products on page ${currentPage}, moving to next category`);
-            break;
-        }
+        return products.map(p => ({ ...p, category }));
+    } catch (err) {
+        return [];
+    } finally {
+        await page.close();
+    }
+}
 
-        for (const product of products) {
-            console.log(`✅ Scraped: ${product.name} - ${product.price} DT`);
-        }
+async function scrapeTunisianetCategory(browser: Browser, categoryUrl: string): Promise<IProductInput[]> {
+    const category = categoryFromUrl(categoryUrl);
+    const allProducts: IProductInput[] = [];
+    let currentPage = 1;
+    let hasMore = true;
 
-        console.log(`Found ${products.length} products on page ${currentPage}`);
-        allProducts.push(...products);
-        currentPage++;
-        await page.waitForTimeout(1000);
+    while (hasMore) {
+        const pagesToScrape = [currentPage, currentPage + 1];
+        const results = await Promise.all(
+            pagesToScrape.map(p => scrapeTunisianetPage(browser, categoryUrl, p, category))
+        );
+
+        const flattened = results.flat();
+        if (flattened.length === 0 || results.some(r => r.length === 0)) {
+            hasMore = false;
+        }
+        
+        allProducts.push(...flattened);
+        if (currentPage > 50) break;
+        currentPage += 2;
     }
 
     return allProducts;
 }
 
 export async function scrapeTunisianet() {
-    const browser = await chromium.launch({ headless: false });
-    const page = await browser.newPage();
+    const startTime = Date.now();
+    const browser = await chromium.launch({
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+    });
 
-    // Auto-discover all categories
-    const categoryUrls = await discoverTunisianetCategories(page);
+    try {
+        const categoryUrls = await discoverTunisianetCategories(browser);
+        let completed = 0;
+        const total = categoryUrls.length;
+        const allProducts: IProductInput[] = [];
 
-    const allProducts = [];
+        console.log(`Starting optimized Tunisianet parallel scrape...`);
 
-    for (const url of categoryUrls) {
-        console.log(`\nScraping category: ${url}`);
-        try {
-            const products = await scrapeTunisianetCategory(page, url);
-            allProducts.push(...products);
-            console.log(`Category total: ${products.length} products`);
-        } catch (err) {
-            console.error(`Failed to scrape ${url}:`, err);
-        }
+        await parallelLimit(categoryUrls, 3, async (url) => {
+            try {
+                const products = await scrapeTunisianetCategory(browser, url);
+                allProducts.push(...products);
+                
+                completed++;
+                const percentage = Math.round((completed / total) * 100);
+                const elapsed = (Date.now() - startTime) / 1000;
+                const eta = completed > 0 ? Math.round((elapsed / completed) * (total - completed)) : 0;
+                
+                console.log(`[Tunisianet] ${percentage}% | Scraped ${completed}/${total} | Products: ${products.length} | ETA: ${eta}s`);
+            } catch (err) {
+                console.error(`Failed to scrape ${url}:`, err);
+                completed++;
+            }
+        });
+
+        const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
+        console.log(`\n✅ Tunisianet complete! Total: ${allProducts.length} in ${totalTime}s`);
+        
+        return allProducts;
+    } finally {
+        await browser.close();
     }
-
-    console.log(`\nTotal Tunisianet products: ${allProducts.length}`);
-    await browser.close();
-    return allProducts;
 }

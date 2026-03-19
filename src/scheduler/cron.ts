@@ -11,13 +11,13 @@ async function scheduleJobs() {
         repeat: { pattern: '0 */6 * * *' }
     });
 
-    await scrapeQueue.add('scrape-tunisianet', {}, {
-        repeat: { pattern: '0 */6 * * *' }
-    });
+    // await scrapeQueue.add('scrape-tunisianet', {}, {
+    //     repeat: { pattern: '0 */6 * * *' }
+    // });
 
-    await scrapeQueue.add('scrape-scoop', {}, {
-        repeat: { pattern: '0 */6 * * *' }
-    });
+    // await scrapeQueue.add('scrape-scoop', {}, {
+    //     repeat: { pattern: '0 */6 * * *' }
+    // });
 
     console.log('All jobs scheduled!');
     await scrapeQueue.close();

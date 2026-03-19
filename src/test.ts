@@ -16,8 +16,8 @@ await scrapeQueue.obliterate({ force: true });
 console.log('Queue cleared!');
 
 await scrapeQueue.add('scrape-mytek', {});
-await scrapeQueue.add('scrape-tunisianet', {});
-await scrapeQueue.add('scrape-scoop', {});
+// await scrapeQueue.add('scrape-tunisianet', {});
+// await scrapeQueue.add('scrape-scoop', {});
 console.log('Jobs added to queue!');
 
 await scrapeQueue.close();

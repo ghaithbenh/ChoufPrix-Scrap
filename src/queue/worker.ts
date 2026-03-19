@@ -1,7 +1,7 @@
 import { Worker } from 'bullmq';
 import { scrapeMyTek } from '../scraper/scrapeMyTek.js';
 import { scrapeTunisianet } from '../scraper/scrapeTunisianet.js';
-import { scrapeScoopTN } from '../scraper/scrapeScoop.js';
+import { scrapeScoop } from '../scraper/scrapeScoop.js';
 import { updateProduct } from '../updateProducts.js';
 import { Redis } from 'ioredis';
 
@@ -21,11 +21,13 @@ new Worker('scrapeQueue', async (job) => {
         // Handle multiple stores
         if (job.name === 'scrape-mytek') {
             products = await scrapeMyTek();
-        } else if (job.name === 'scrape-tunisianet') {
-            products = await scrapeTunisianet();
-        } else if (job.name === 'scrape-scoop') {
-            products = await scrapeScoopTN();
-        } else {
+        }
+        //   else if (job.name === 'scrape-tunisianet') {
+        //     products = await scrapeTunisianet();
+        // } else if (job.name === 'scrape-scoop') {
+        //     products = await scrapeScoop();
+        // }
+        else {
             console.warn(`Unknown job name: ${job.name}`);
             return;
         }

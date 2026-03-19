@@ -6,6 +6,7 @@ export interface IProductInput {
     price: number;
     url: string;
     image: string;
+    category?: string;
     description?: string;
     lastUpdated?: Date;
 }
@@ -18,6 +19,7 @@ const ProductSchema: Schema = new Schema({
     price: { type: Number, required: true },
     url: { type: String, required: true },
     image: { type: String },
+    category: { type: String },
     lastUpdated: { type: Date, default: Date.now }
 });
 
