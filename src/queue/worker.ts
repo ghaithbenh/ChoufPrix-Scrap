@@ -19,14 +19,15 @@ new Worker('scrapeQueue', async (job) => {
 
     try {
         // Handle multiple stores
-        if (job.name === 'scrape-mytek') {
-            products = await scrapeMyTek();
-        }
+        // if (job.name === 'scrape-mytek') {
+        //     products = await scrapeMyTek();
+        // }
         //   else if (job.name === 'scrape-tunisianet') {
         //     products = await scrapeTunisianet();
-        // } else if (job.name === 'scrape-scoop') {
-        //     products = await scrapeScoop();
-        // }
+        // } else 
+        if (job.name === 'scrape-scoop') {
+            products = await scrapeScoop();
+        }
         else {
             console.warn(`Unknown job name: ${job.name}`);
             return;
