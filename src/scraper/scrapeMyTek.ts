@@ -1,5 +1,6 @@
 import { chromium } from 'playwright';
 import type { IProductInput } from '../models/product.js';
+import { mapCategory } from '../utils/taxonomy.js';
 
 async function discoverMyTekCategories(): Promise<string[]> {
     console.log('Fetching MyTek sitemap...');
@@ -44,10 +45,9 @@ async function scrapeWorker(
     });
 
     for (const categoryUrl of categories) {
-        const categoryName = categoryUrl
-            .split('/').pop()
-            ?.replace('.html', '')
-            .replace(/-/g, ' ') ?? 'Other';
+        const rawSlug = categoryUrl.split('/').pop()?.replace('.html', '') ?? 'other';
+        const categoryName = rawSlug.replace(/-/g, ' ');
+        const { parent: parentCategory, subcategory } = mapCategory(rawSlug);
 
         let pageNum = 1;
 
@@ -70,7 +70,7 @@ async function scrapeWorker(
                 const valid = products.filter(p => p.name && p.price > 0);
                 if (valid.length === 0) break;
 
-                results.push(...valid.map(p => ({ ...p, category: categoryName })));
+                results.push(...valid.map(p => ({ ...p, category: categoryName, parentCategory, subcategory })));
                 console.log(`[Worker ${workerId}] ${categoryName} p${pageNum}: ${valid.length} products`);
                 pageNum++;
                 await page.waitForTimeout(300);
@@ -93,7 +93,7 @@ export async function scrapeMyTek(): Promise<IProductInput[]> {
 
     // Split categories between workers
     const chunks: string[][] = Array.from({ length: WORKERS }, () => []);
-    categoryUrls.forEach((url, i) => chunks[i % WORKERS].push(url));
+    categoryUrls.forEach((url, i) => chunks[i % WORKERS]!.push(url));
 
     // Run workers in parallel
     await Promise.all(

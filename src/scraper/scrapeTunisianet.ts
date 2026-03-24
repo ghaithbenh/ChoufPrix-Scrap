@@ -2,6 +2,7 @@ import { chromium } from 'playwright';
 import type { Browser, Page } from 'playwright';
 import type { IProductInput } from '../models/product.js';
 import { categoryFromUrl } from '../utils/categorize.js';
+import { mapCategory } from '../utils/taxonomy.js';
 import { parallelLimit } from '../utils/concurrency.js';
 
 async function setupPage(page: Page) {
@@ -43,11 +44,18 @@ async function discoverTunisianetCategories(browser: Browser): Promise<string[]>
     }
 }
 
-async function scrapeTunisianetPage(browser: Browser, baseUrl: string, pageNum: number, category: string): Promise<IProductInput[]> {
+async function scrapeTunisianetPage(
+    browser: Browser,
+    baseUrl: string,
+    pageNum: number,
+    category: string,
+    parentCategory: string,
+    subcategory: string,
+): Promise<IProductInput[]> {
     const page = await browser.newPage();
     await setupPage(page);
     const url = `${baseUrl}?page=${pageNum}&order=product.price.asc`;
-    
+
     try {
         await page.goto(url, { waitUntil: 'domcontentloaded' });
         try {
@@ -67,7 +75,7 @@ async function scrapeTunisianetPage(browser: Browser, baseUrl: string, pageNum: 
             }))
         );
 
-        return products.map(p => ({ ...p, category }));
+        return products.map(p => ({ ...p, category, parentCategory, subcategory }));
     } catch (err) {
         return [];
     } finally {
@@ -77,6 +85,7 @@ async function scrapeTunisianetPage(browser: Browser, baseUrl: string, pageNum: 
 
 async function scrapeTunisianetCategory(browser: Browser, categoryUrl: string): Promise<IProductInput[]> {
     const category = categoryFromUrl(categoryUrl);
+    const { parent: parentCategory, subcategory } = mapCategory(categoryUrl);
     const allProducts: IProductInput[] = [];
     let currentPage = 1;
     let hasMore = true;
@@ -84,7 +93,7 @@ async function scrapeTunisianetCategory(browser: Browser, categoryUrl: string): 
     while (hasMore) {
         const pagesToScrape = [currentPage, currentPage + 1];
         const results = await Promise.all(
-            pagesToScrape.map(p => scrapeTunisianetPage(browser, categoryUrl, p, category))
+            pagesToScrape.map(p => scrapeTunisianetPage(browser, categoryUrl, p, category, parentCategory, subcategory))
         );
 
         const flattened = results.flat();

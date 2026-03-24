@@ -1,6 +1,7 @@
 import { chromium } from 'playwright';
 import type { IProductInput } from '../models/product.js';
 import { categoryFromUrl } from '../utils/categorize.js';
+import { mapCategory } from '../utils/taxonomy.js';
 
 async function discoverScoopCategories(): Promise<string[]> {
     console.log('Discovering Scoop categories from sitemap page...');
@@ -54,6 +55,7 @@ async function scrapeWorker(
 
     for (const url of categories) {
         const category = categoryFromUrl(url);
+        const { parent: parentCategory, subcategory } = mapCategory(url);
         console.log(`[Worker ${workerId}] Scraping: ${category}`);
 
         try {
@@ -97,7 +99,7 @@ async function scrapeWorker(
 
             const valid = products.filter(p => p.name && p.price > 0);
             console.log(`[Worker ${workerId}] ${category}: ${valid.length} products`);
-            results.push(...valid.map(p => ({ ...p, category })));
+            results.push(...valid.map(p => ({ ...p, category, parentCategory, subcategory })));
 
         } catch (err) {
             console.error(`[Worker ${workerId}] Failed: ${url}`, err);
@@ -123,7 +125,7 @@ export async function scrapeScoop(): Promise<IProductInput[]> {
 
     // Split categories between workers
     const chunks: string[][] = Array.from({ length: WORKERS }, () => []);
-    categoryUrls.forEach((url, i) => chunks[i % WORKERS].push(url));
+    categoryUrls.forEach((url, i) => chunks[i % WORKERS]!.push(url));
 
     // Run 3 separate browsers in parallel
     await Promise.all(
@@ -131,6 +133,6 @@ export async function scrapeScoop(): Promise<IProductInput[]> {
     );
 
     const totalTime = ((Date.now() - startTime) / 1000 / 60).toFixed(1);
-    console.log(`\n✅ Scoop complete! ${allProducts.length} products in ${totalTime} minutes`);
+    console.log(`\n Scoop complete! ${allProducts.length} products in ${totalTime} minutes`);
     return allProducts;
 }

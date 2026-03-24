@@ -7,6 +7,8 @@ export interface IProductInput {
     url: string;
     image: string;
     category?: string;
+    parentCategory?: string;
+    subcategory?: string;
     description?: string;
     lastUpdated?: Date;
 }
@@ -20,6 +22,8 @@ const ProductSchema: Schema = new Schema({
     url: { type: String, required: true },
     image: { type: String },
     category: { type: String },
+    parentCategory: { type: String, default: 'Électroménager & Autres' },
+    subcategory: { type: String, default: 'Divers' },
     lastUpdated: { type: Date, default: Date.now }
 });
 
